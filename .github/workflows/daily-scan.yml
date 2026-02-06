@@ -1,0 +1,50 @@
+name: Veille LinkedIn Quotidienne
+
+on:
+  schedule:
+    # Lance a 7h UTC = 8h CET (hiver) tous les jours
+    - cron: '0 7 * * *'
+  workflow_dispatch:  # Permet lancement manuel
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Create directories
+        run: mkdir -p data logs
+
+      - name: Run scanner
+        env:
+          GOOGLE_CSE_CX: ${{ secrets.GOOGLE_CSE_CX }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python src/main.py
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scan-logs-${{ github.run_number }}
+          path: logs/
+          retention-days: 7
+
+      - name: Upload database
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: leads-database-${{ github.run_number }}
+          path: data/leads.db
+          retention-days: 30
