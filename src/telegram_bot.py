@@ -129,6 +129,44 @@ def send_daily_digest(leads):
         logging.error(f"Erreur envoi digest: {e}")
 
 
+async def _send_alerte_lead_chaud_async(lead):
+    """Version async de l'envoi alerte lead chaud"""
+    bot = Bot(token=TELEGRAM_BOT_TOKEN)
+
+    message = (
+        f"\U0001f525 *Lead chaud detecte*\n"
+        f"\U0001f464 {lead.get('title', 'Sans titre')}\n"
+        f"\U0001f4ca Score: {lead.get('score', 0)}/100\n"
+        f"\U0001f3ed Secteur: {lead.get('secteur', 'Autre')}\n"
+        f"\U0001f517 {lead.get('url', '')}"
+    )
+
+    await bot.send_message(
+        chat_id=TELEGRAM_CHAT_ID,
+        text=message,
+        parse_mode='Markdown',
+        disable_web_page_preview=True,
+    )
+
+
+def alerte_lead_chaud(lead):
+    """
+    Envoie une alerte pour un lead chaud (score >= 75).
+    Fonction synchrone qui wrap l'envoi async.
+    """
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        logging.warning("Telegram non configure - alerte ignoree")
+        return
+
+    try:
+        asyncio.run(_send_alerte_lead_chaud_async(lead))
+        logging.info(f"Alerte lead chaud envoyee (score: {lead.get('score', 0)})")
+    except TelegramError as e:
+        logging.error(f"Erreur Telegram alerte: {e}")
+    except Exception as e:
+        logging.error(f"Erreur envoi alerte: {e}")
+
+
 # ==================== CALLBACK HANDLERS ====================
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):

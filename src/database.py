@@ -1,14 +1,20 @@
 """
 Gestion base de donnees SQLite pour anti-doublons et tracking
++ Integration Apps Script pour check_url
 """
 import sqlite3
 import logging
+import os
+import requests
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import quote
 import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from config.config import DB_PATH
+
+APPS_SCRIPT_URL = os.environ.get("APPS_SCRIPT_URL")
 
 
 def init_db():
@@ -27,6 +33,7 @@ def init_db():
             detected_date DATE,
             score INTEGER,
             lead_type TEXT,
+            secteur TEXT,
             manually_reviewed BOOLEAN DEFAULT 0,
             keep_decision BOOLEAN DEFAULT NULL,
             google_sheet_exported BOOLEAN DEFAULT 0,
@@ -39,8 +46,32 @@ def init_db():
     logging.info("Base de donnees initialisee")
 
 
-def is_duplicate(url):
-    """Verifie si l'URL existe deja en base"""
+def _check_url_apps_script(url):
+    """
+    Verifie si l'URL existe via Apps Script.
+
+    Returns:
+        bool: True si existe, False sinon, None si erreur
+    """
+    if not APPS_SCRIPT_URL:
+        return None
+
+    try:
+        encoded_url = quote(url, safe='')
+        response = requests.get(
+            f"{APPS_SCRIPT_URL}?action=check_url&url={encoded_url}",
+            timeout=10,
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data.get("exists", False)
+    except Exception as e:
+        logging.warning(f"Erreur Apps Script check_url: {e}")
+        return None
+
+
+def _check_url_sqlite(url):
+    """Verifie si l'URL existe en SQLite local"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
@@ -49,6 +80,22 @@ def is_duplicate(url):
 
     conn.close()
     return result is not None
+
+
+def is_duplicate(url):
+    """
+    Verifie si l'URL existe deja.
+    Priorite: Apps Script si configure, sinon SQLite local.
+    """
+    # Essayer Apps Script d'abord si configure
+    if APPS_SCRIPT_URL:
+        result = _check_url_apps_script(url)
+        if result is not None:
+            return result
+        logging.warning("Fallback vers SQLite local")
+
+    # Fallback SQLite
+    return _check_url_sqlite(url)
 
 
 def save_leads(leads):
@@ -61,15 +108,16 @@ def save_leads(leads):
         try:
             cursor.execute('''
                 INSERT INTO linkedin_leads
-                (url, title, snippet, detected_date, score, lead_type)
-                VALUES (?, ?, ?, ?, ?, ?)
+                (url, title, snippet, detected_date, score, lead_type, secteur)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             ''', (
                 lead['url'],
                 lead['title'],
-                lead['snippet'],
+                lead.get('snippet', ''),
                 datetime.now().date().isoformat(),
                 lead['score'],
                 lead['lead_type'],
+                lead.get('secteur', 'Autre'),
             ))
             saved_count += 1
         except sqlite3.IntegrityError:
