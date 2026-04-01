@@ -2,9 +2,11 @@
 Scanner via Brave Search API
 """
 import logging
+import re
 import time
 import os
 import requests
+from datetime import datetime
 from urllib.parse import quote
 
 BRAVE_API_KEY = os.environ.get("BRAVE_API_KEY")
@@ -102,6 +104,11 @@ def scan_reddit():
         logging.info(f"[Reddit {i}/{len(REQUETES_REDDIT)}] {query[:60]}...")
         results = _brave_search(query)
         logging.info(f"  -> {len(results)} resultats")
+        for r in results:
+            m = re.search(r'reddit\.com/(r/[^/?#]+)', r.get("url", ""))
+            r["subreddit"] = m.group(1) if m else ""
+            r["requete"] = query
+            r["date_collecte"] = datetime.now().strftime("%Y-%m-%d")
         all_results.extend(results)
 
         if i < len(REQUETES_REDDIT):

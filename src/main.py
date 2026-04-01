@@ -47,35 +47,36 @@ APPS_SCRIPT_URL = os.environ.get("APPS_SCRIPT_URL")
 
 def send_to_apps_script_reddit(leads):
     """
-    Envoie les leads Reddit vers Apps Script action add_veille_reddit.
+    Envoie les leads Reddit vers Apps Script action add_veille_reddit (batch unique).
     """
     if not APPS_SCRIPT_URL:
         logging.warning("APPS_SCRIPT_URL non configure - envoi Reddit ignore")
         return 0
 
-    sent_count = 0
-    for lead in leads:
-        try:
-            payload = {
-                "action": "add_veille_reddit",
-                "url": lead.get("url", ""),
-                "title": lead.get("title", ""),
-                "description": lead.get("description", ""),
+    payload = {
+        "action": "add_veille_reddit",
+        "posts": [
+            {
+                "url_post": lead.get("url", ""),
+                "titre": lead.get("title", ""),
+                "snippet": lead.get("description", ""),
+                "subreddit": lead.get("subreddit", ""),
                 "score": lead.get("score", 0),
-                "secteur": lead.get("secteur", "Autre"),
+                "requete": lead.get("requete", ""),
+                "date_collecte": lead.get("date_collecte", ""),
             }
-            response = requests.post(
-                APPS_SCRIPT_URL,
-                json=payload,
-                timeout=15,
-            )
-            response.raise_for_status()
-            sent_count += 1
-        except Exception as e:
-            logging.error(f"Erreur envoi Reddit Apps Script: {e}")
+            for lead in leads
+        ],
+    }
 
-    logging.info(f"{sent_count}/{len(leads)} leads Reddit envoyes a Apps Script")
-    return sent_count
+    try:
+        response = requests.post(APPS_SCRIPT_URL, json=payload, timeout=30)
+        response.raise_for_status()
+        logging.info(f"{len(leads)} leads Reddit envoyes a Apps Script (batch)")
+        return len(leads)
+    except Exception as e:
+        logging.error(f"Erreur envoi Reddit Apps Script: {e}")
+        return 0
 
 
 def main():
@@ -107,6 +108,13 @@ def main():
             # Envoyer vers Apps Script
             logging.info("[2/6] Envoi Reddit vers Apps Script...")
             send_to_apps_script_reddit(scored_reddit)
+
+            # Alertes Telegram leads chauds Reddit (seuil 40, plus bas que LinkedIn)
+            hot_reddit = [lead for lead in scored_reddit if lead['score'] >= 40]
+            if hot_reddit:
+                logging.info(f"  -> {len(hot_reddit)} leads chauds Reddit (score >= 40)")
+                for lead in hot_reddit:
+                    alerte_lead_chaud(lead)
     else:
         logging.info("  -> Aucun resultat Reddit")
 
