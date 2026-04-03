@@ -13,19 +13,12 @@ BRAVE_API_KEY = os.environ.get("BRAVE_API_KEY")
 BRAVE_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search"
 
 REQUETES_REDDIT = [
-    'site:reddit.com/r/BusinessIntelligence "Cognos" "migrate" OR "replace" OR "alternative"',
-    'site:reddit.com/r/PowerBI "migrating from Cognos" OR "Cognos to Power BI"',
-    'site:reddit.com/r/Tableau "replace" OR "switching" OR "evaluating alternatives"',
-    'site:reddit.com/r/dataengineering "Cognos" "migration" OR "replace" OR "deadline"',
-    'site:reddit.com/r/ITManagers "BI migration" OR "replace Cognos" OR "Tableau license cost"',
-    'site:reddit.com "Cognos" "migration" "Power BI" -site:linkedin.com',
-]
-
-REQUETES_LINKEDIN_VEILLE = [
-    'site:linkedin.com/posts "replace Cognos" OR "Cognos migration" "Power BI"',
-    'site:linkedin.com/pulse "BI modernization" "Power BI" 2025 OR 2026',
-    'site:linkedin.com/posts "migrating from Tableau" OR "Tableau to Power BI"',
-    'site:linkedin.com/pulse "legacy BI" "modernization" "Power BI"',
+    'site:reddit.com "Cognos" "Power BI" "migrate" OR "migration" OR "replacing"',
+    'site:reddit.com "Cognos" "move to Power BI" OR "switch to Power BI"',
+    'site:reddit.com "migrate from Cognos" OR "leaving Cognos" OR "replacing Cognos"',
+    'site:reddit.com "Tableau" "replace" "Power BI" OR "Superset" OR "migration"',
+    'site:reddit.com "migrate from Tableau" OR "leaving Tableau" OR "Tableau license" "alternative"',
+    'site:reddit.com "Cognos migration" OR "Cognos to Power BI" OR "Cognos alternatives"',
 ]
 
 
@@ -118,31 +111,3 @@ def scan_reddit():
     return all_results
 
 
-def scan_linkedin():
-    """
-    Scanne LinkedIn via Brave Search.
-
-    Returns:
-        Liste de dict {url, title, description, snippet}
-    """
-    all_results = []
-
-    for i, query in enumerate(REQUETES_LINKEDIN_VEILLE, 1):
-        logging.info(f"[LinkedIn {i}/{len(REQUETES_LINKEDIN_VEILLE)}] {query[:60]}...")
-        results = _brave_search(query)
-        logging.info(f"  -> {len(results)} resultats")
-
-        for r in results:
-            url = r.get("url", "")
-            if "/posts/" in url or "/pulse/" in url:
-                all_results.append({
-                    "url": url,
-                    "title": r.get("title", ""),
-                    "snippet": r.get("description", ""),
-                })
-
-        if i < len(REQUETES_LINKEDIN_VEILLE):
-            time.sleep(1)
-
-    logging.info(f"Total LinkedIn: {len(all_results)} resultats (posts/articles)")
-    return all_results

@@ -1,12 +1,12 @@
 """
-Orchestrateur principal de la veille LinkedIn + Reddit.
+Orchestrateur principal de la veille LinkedIn Profils + Reddit.
 
 Workflow:
-  1. Scanner Brave (LinkedIn + Reddit)
-  2. Filtrer doublons via Apps Script / SQLite
+  1. Scanner Brave (Reddit) + Google CSE (LinkedIn Profils)
+  2. Filtrer doublons via SQLite
   3. Scorer leads (criteres + secteur)
   4. Reddit -> Apps Script add_veille_reddit
-  5. LinkedIn -> Telegram si score >= 60
+  5. LinkedIn Profils -> Telegram si score >= 60
   6. Leads chauds (score >= 75) -> alerte Telegram
 """
 import sys
@@ -37,7 +37,8 @@ logging.basicConfig(
 )
 
 from src.database import init_db, is_duplicate, save_leads
-from src.brave_scanner import scan_linkedin, scan_reddit, REQUETES_REDDIT, REQUETES_LINKEDIN_VEILLE
+from src.brave_scanner import scan_reddit, REQUETES_REDDIT
+from src.google_cse_scanner import scan_linkedin_profils
 from src.scorer import score_leads
 from src.telegram_bot import send_daily_digest, alerte_lead_chaud
 from config.config import MAX_LEADS_TELEGRAM
@@ -82,7 +83,7 @@ def send_to_apps_script_reddit(leads):
 def main():
     """Pipeline principal de veille quotidienne"""
     logging.info("=" * 50)
-    logging.info("DEMARRAGE Veille LinkedIn + Reddit (Brave API)")
+    logging.info("DEMARRAGE Veille LinkedIn Profils + Reddit")
     logging.info("=" * 50)
 
     # Init DB
@@ -118,53 +119,55 @@ def main():
     else:
         logging.info("  -> Aucun resultat Reddit")
 
-    # ==================== PARTIE LINKEDIN ====================
-    logging.info("[3/6] Scan LinkedIn via Brave...")
-    linkedin_results = scan_linkedin()
+    # ==================== PARTIE LINKEDIN PROFILS ====================
+    logging.info("[3/6] Scan LinkedIn Profils via Google CSE...")
+    profil_results = scan_linkedin_profils()
 
-    if not linkedin_results:
-        logging.warning("Aucun resultat LinkedIn - arret")
-        return
+    if not profil_results:
+        logging.warning("Aucun resultat LinkedIn Profils - etape ignoree")
+    else:
+        logging.info(f"  -> {len(profil_results)} resultats LinkedIn Profils bruts")
 
-    logging.info(f"  -> {len(linkedin_results)} resultats LinkedIn bruts")
+        # Filtrer doublons
+        logging.info("[4/6] Filtrage anti-doublons LinkedIn Profils...")
+        new_profils = [lead for lead in profil_results if not is_duplicate(lead['url'])]
 
-    # Filtrer doublons LinkedIn
-    logging.info("[4/6] Filtrage anti-doublons LinkedIn...")
-    new_leads = [lead for lead in linkedin_results if not is_duplicate(lead['url'])]
+        dupes = len(profil_results) - len(new_profils)
+        logging.info(f"  -> {len(new_profils)} nouveaux profils ({dupes} doublons ignores)")
 
-    dupes = len(linkedin_results) - len(new_leads)
-    logging.info(f"  -> {len(new_leads)} nouveaux leads ({dupes} doublons ignores)")
+        if new_profils:
+            # Ajoute snippet depuis description pour le scoring
+            for lead in new_profils:
+                lead['snippet'] = lead.get('description', '')
 
-    if not new_leads:
-        logging.info("Tous les leads LinkedIn sont des doublons - arret")
-        return
+            # Scoring
+            logging.info("[5/6] Scoring des profils LinkedIn...")
+            scored_profils = score_leads(new_profils)
 
-    # Scoring
-    logging.info("[5/6] Scoring des leads LinkedIn...")
-    scored_leads = score_leads(new_leads)
+            # Sauvegarde en base locale
+            save_leads(scored_profils)
 
-    # Sauvegarde en base locale
-    save_leads(scored_leads)
+            # Filtrer leads avec score >= 60 pour Telegram
+            telegram_leads = [lead for lead in scored_profils if lead['score'] >= 60]
+            logging.info(f"  -> {len(telegram_leads)} profils avec score >= 60")
 
-    # Filtrer leads avec score >= 60 pour Telegram
-    telegram_leads = [lead for lead in scored_leads if lead['score'] >= 60]
-    logging.info(f"  -> {len(telegram_leads)} leads avec score >= 60")
+            # Alertes leads chauds (score >= 75)
+            hot_leads = [lead for lead in scored_profils if lead['score'] >= 75]
+            if hot_leads:
+                logging.info(f"[6/6] Envoi alertes leads chauds ({len(hot_leads)})...")
+                for lead in hot_leads:
+                    alerte_lead_chaud(lead)
 
-    # Alertes leads chauds (score >= 75)
-    hot_leads = [lead for lead in scored_leads if lead['score'] >= 75]
-    if hot_leads:
-        logging.info(f"[6/6] Envoi alertes leads chauds ({len(hot_leads)})...")
-        for lead in hot_leads:
-            alerte_lead_chaud(lead)
-
-    # Digest Telegram (top N leads avec score >= 60)
-    if telegram_leads:
-        top_leads = telegram_leads[:MAX_LEADS_TELEGRAM]
-        logging.info(f"Envoi digest Telegram (top {len(top_leads)} leads)...")
-        send_daily_digest(top_leads)
+            # Digest Telegram (top N leads avec score >= 60)
+            if telegram_leads:
+                top_leads = telegram_leads[:MAX_LEADS_TELEGRAM]
+                logging.info(f"Envoi digest Telegram (top {len(top_leads)} profils)...")
+                send_daily_digest(top_leads)
+        else:
+            logging.info("Tous les profils LinkedIn sont des doublons - etape ignoree")
 
     logging.info("=" * 50)
-    logging.info("Veille LinkedIn + Reddit terminee avec succes")
+    logging.info("Veille LinkedIn Profils + Reddit terminee avec succes")
     logging.info("=" * 50)
 
 
