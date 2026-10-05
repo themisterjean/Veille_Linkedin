@@ -1,3 +1,5 @@
+Système retiré le 05/10/2026 — remplacé par growth/scout dans le dépôt principal.
+
 # Veille LinkedIn - Meta BI
 
 Bot automatise de veille LinkedIn pour detecter des opportunites de migration BI (Cognos/Tableau vers Power BI) via Google Custom Search Engine.
